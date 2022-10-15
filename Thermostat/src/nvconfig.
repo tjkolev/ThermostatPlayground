@@ -1,0 +1,82 @@
+#include "LittleFS.h"
+#include "main.h"
+
+#define CONFIG_FILE_NAME    "appconfig.json"
+
+bool _mounted = false;
+char _storedConfig[500]; // cached
+bool _refreshCache = true;
+bool _storeCache = false;
+
+bool MountFS() {
+    if(!_mounted) {
+        _mounted = LittleFS.begin();
+        if(!_mounted) {
+            log("Failed to mount LittleFS.");
+        }
+    }
+    return _mounted;
+}
+
+File* OpenConfigFile(const char* fmode) {
+    if(!MountFS()) {
+        return NULL;
+    }
+
+    File cfgFile = LittleFS.open(CONFIG_FILE_NAME, fmode);
+    if(!cfgFile) {
+        log("Failed to open file %s in mode '%s'.", CONFIG_FILE_NAME, fmode);
+        return NULL;
+    }
+    return &cfgFile;
+}
+
+bool SaveConfig(const char* appCfg) {
+    if(NULL == appCfg || strlen(appCfg) < 1) {
+        logd("No config to save.");
+        return true;
+    }
+
+    strcpy(_storedConfig, appCfg); // cache it
+    _refreshCache = false;
+    _storeCache = true;
+
+    File* cfgFile = OpenConfigFile("w");
+    if(NULL == cfgFile) {
+        return false;
+    }
+
+    bool ok = false;
+    if(cfgFile->write(appCfg) <= 0) {
+        log("Failed to save config. Error: %d.", cfgFile->getWriteError());
+    }
+    else {
+        _storeCache = false;
+        ok = true;
+    }
+    cfgFile->close();
+
+    return ok;
+}
+
+const char* LoadConfig() {
+    if(_storeCache) {
+        SaveConfig(_storedConfig);
+    }
+
+    if(!_refreshCache) {
+        return _storedConfig;
+    }
+
+    File* cfgFile = OpenConfigFile("r");
+    if(NULL == cfgFile) {
+        return NULL;
+    }
+
+    if(cfgFile->readBytes(_storedConfig, 500) < 1) {
+        log("Nothing was read from '%s'.", CONFIG_FILE_NAME);
+    }
+
+    _refreshCache = false;
+    return _storedConfig;
+}
